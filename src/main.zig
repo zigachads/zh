@@ -1,12 +1,8 @@
 const std = @import("std");
+const utils = @import("utils.zig");
+const commands = @import("commands.zig");
 
-fn strcmp(str1: []const u8, str2: []const u8) bool {
-    if (str1.len != str2.len) return false;
-    for (str1, str2) |c1, c2| {
-        if (c1 != c2) return false;
-    }
-    return true;
-}
+const Builtins = enum { exit, echo, type };
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
@@ -44,18 +40,27 @@ pub fn main() !void {
 
         if (argc == 0) continue;
 
-        const command = argv[0];
-        if (argc == 2 and strcmp("exit", command) and strcmp("0", argv[1])) {
-            return;
-        } else if (argc > 1 and strcmp("echo", command)) {
-            for (argv[1..argc], 0..) |word, index| {
-                if (index != 0) try stdout.print(" ", .{});
-                try stdout.print("{s}", .{word});
-            }
-            try stdout.print("\n", .{});
+        const command = std.meta.stringToEnum(Builtins, argv[0]) orelse {
+            try stdout.print("{s}: command not found\n", .{argv[0]});
             continue;
+        };
+        switch (command) {
+            .exit => {
+                if (commands.exitHandler(argc, &argv, stdout) == 0) {
+                    return;
+                }
+            },
+            .echo => {
+                _ = commands.echoHandler(argc, &argv, stdout);
+            },
+            .type => {
+                if (argc != 2) continue;
+                _ = std.meta.stringToEnum(Builtins, argv[1]) orelse {
+                    try stdout.print("{s}: not found\n", .{argv[1]});
+                    continue;
+                };
+                try stdout.print("{s} is a shell builtin\n", .{argv[1]});
+            },
         }
-
-        try stdout.print("{s}: command not found\n", .{user_input});
     }
 }
