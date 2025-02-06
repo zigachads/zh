@@ -82,7 +82,9 @@ pub fn main() !void {
             .type => {
                 if (argv.items.len != 2) continue;
                 _ = std.meta.stringToEnum(Builtins, argv.items[1]) orelse {
-                    try stdout.print("{s}: not found\n", .{argv.items[1]});
+                    if (commands.typeHandler(argv.items.len, argv.items, allocator, stdout) == 1) {
+                        try stdout.print("{s}: not found\n", .{argv.items[1]});
+                    }
                     continue;
                 };
                 try stdout.print("{s} is a shell builtin\n", .{argv.items[1]});
