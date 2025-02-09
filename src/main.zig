@@ -2,7 +2,7 @@ const std = @import("std");
 const commands = @import("commands.zig");
 const utils = @import("utils.zig");
 
-const Builtins = enum { exit, echo, type, pwd };
+const Builtins = enum { exit, echo, type, pwd, cd };
 
 fn childProcessHelper(allocator: std.mem.Allocator, argv: []const []const u8) !std.process.Child.Term {
     var child = std.process.Child.init(argv, allocator);
@@ -81,6 +81,16 @@ pub fn main() !void {
                 const pwd = try std.process.getCwdAlloc(allocator);
                 defer allocator.free(pwd);
                 try stdout.print("{s}\n", .{pwd});
+            },
+            .cd => {
+                if (argv.len != 2) continue;
+                const target = argv[1];
+                var dir = std.fs.cwd().openDir(target, .{}) catch {
+                    try stdout.print("cd: {s}: No such file or directory\n", .{target});
+                    continue;
+                };
+                defer dir.close();
+                try dir.setAsCwd();
             },
         }
     }
