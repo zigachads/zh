@@ -2,7 +2,7 @@ const std = @import("std");
 const commands = @import("commands.zig");
 const utils = @import("utils.zig");
 
-const Builtins = enum { exit, echo, type };
+const Builtins = enum { exit, echo, type, pwd };
 
 fn childProcessHelper(allocator: std.mem.Allocator, argv: []const []const u8) !std.process.Child.Term {
     var child = std.process.Child.init(argv, allocator);
@@ -76,6 +76,11 @@ pub fn main() !void {
                     continue;
                 };
                 try stdout.print("{s} is a shell builtin\n", .{target});
+            },
+            .pwd => {
+                const pwd = try std.process.getCwdAlloc(allocator);
+                defer allocator.free(pwd);
+                try stdout.print("{s}\n", .{pwd});
             },
         }
     }
