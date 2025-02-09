@@ -1,8 +1,6 @@
 const std = @import("std");
-const commands = @import("commands.zig");
+const builtins = @import("builtins.zig");
 const utils = @import("utils.zig");
-
-const Builtins = enum { exit, echo, type, pwd, cd };
 
 fn childProcessHelper(allocator: std.mem.Allocator, argv: []const []const u8) !std.process.Child.Term {
     var child = std.process.Child.init(argv, allocator);
@@ -10,7 +8,7 @@ fn childProcessHelper(allocator: std.mem.Allocator, argv: []const []const u8) !s
     return try child.spawnAndWait();
 }
 
-pub fn main() !void {
+pub fn main() !u8 {
     // Initialize GPA
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -46,7 +44,7 @@ pub fn main() !void {
         if (arguments.argc() == 0) continue;
         const argv = arguments.argv().*;
 
-        const command = std.meta.stringToEnum(Builtins, argv[0]) orelse {
+        const command = std.meta.stringToEnum(builtins.Builtins, argv[0]) orelse {
             if (exec_lookup.hasExecutable(argv[0])) {
                 _ = childProcessHelper(allocator, argv) catch {};
             } else {
@@ -57,41 +55,30 @@ pub fn main() !void {
 
         switch (command) {
             .exit => {
-                if (commands.exitHandler(argv) == 0) {
-                    return;
+                switch (try builtins.exitHandler(argv, stdout)) {
+                    .none => {},
+                    .peace_quit => {
+                        return 0;
+                    },
+                    .panic_quit => {
+                        return 1;
+                    },
                 }
             },
             .echo => {
-                _ = commands.echoHandler(argv, stdout);
+                _ = try builtins.echoHandler(argv, stdout);
             },
             .type => {
-                if (argv.len != 2) continue;
-                const target = argv[1];
-                _ = std.meta.stringToEnum(Builtins, target) orelse {
-                    const target_path = exec_lookup.getExecutablePath(target) orelse {
-                        try stdout.print("{s}: not found\n", .{target});
-                        continue;
-                    };
-                    try stdout.print("{s} is {s}\n", .{ target, target_path });
-                    continue;
-                };
-                try stdout.print("{s} is a shell builtin\n", .{target});
+                _ = try builtins.typeHandler(argv, exec_lookup, stdout);
             },
             .pwd => {
-                const pwd = try std.process.getCwdAlloc(allocator);
-                defer allocator.free(pwd);
-                try stdout.print("{s}\n", .{pwd});
+                _ = try builtins.pwdHandler(allocator, argv, stdout);
             },
             .cd => {
-                if (argv.len != 2) continue;
-                const target = argv[1];
-                var dir = std.fs.cwd().openDir(target, .{}) catch {
-                    try stdout.print("cd: {s}: No such file or directory\n", .{target});
-                    continue;
-                };
-                defer dir.close();
-                try dir.setAsCwd();
+                _ = try builtins.cdHandler(allocator, argv, stdout);
             },
         }
     }
+
+    return 0;
 }
