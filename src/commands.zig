@@ -11,24 +11,24 @@ pub fn exitHandler(argc: usize, argv: []const []const u8) u8 {
     }
 }
 
-pub fn echoHandler(argc: usize, argv: []const []const u8, stdout: std.fs.File.Writer) u8 {
+pub fn echoHandler(argc: usize, argv: []const []const u8, writer: std.fs.File.Writer) u8 {
     for (argv[1..argc], 0..) |word, index| {
         if (index != 0)
-            stdout.print(" ", .{}) catch {
+            writer.print(" ", .{}) catch {
                 return 1;
             };
 
-        stdout.print("{s}", .{word}) catch {
+        writer.print("{s}", .{word}) catch {
             return 1;
         };
     }
-    stdout.print("\n", .{}) catch {
+    writer.print("\n", .{}) catch {
         return 1;
     };
     return 0;
 }
 
-pub fn typeHandler(argc: usize, argv: []const []const u8, allocator: std.mem.Allocator, stdout: std.fs.File.Writer) u8 {
+pub fn typeHandler(allocator: std.mem.Allocator, argc: usize, argv: []const []const u8, writer: std.fs.File.Writer) u8 {
     if (argc != 2) return 1;
 
     var env_vars = std.process.getEnvMap(allocator) catch {
@@ -55,7 +55,7 @@ pub fn typeHandler(argc: usize, argv: []const []const u8, allocator: std.mem.All
         const is_executable = stats.mode & 0b001 != 0;
 
         if (is_executable) {
-            stdout.print("{s} is {s}\n", .{ argv[1], aboslute_path }) catch {
+            writer.print("{s} is {s}\n", .{ argv[1], aboslute_path }) catch {
                 return 1;
             };
             return 0;
