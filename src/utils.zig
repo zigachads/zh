@@ -59,16 +59,24 @@ pub const ExecLookup = struct {
         dir: std.fs.Dir,
         entry: std.fs.Dir.Entry,
     ) !void {
-        if (entry.kind != .file) return;
+        if (entry.kind != .file and entry.kind != .sym_link) return;
 
-        const abs_path = dir.realpathAlloc(self.allocator, entry.name) catch return;
-        defer self.allocator.free(abs_path);
+        const real_path = try dir.realpathAlloc(self.allocator, entry.name);
+        defer self.allocator.free(real_path);
 
-        const file = std.fs.openFileAbsolute(abs_path, .{ .mode = .read_only }) catch return;
+        const file = try std.fs.openFileAbsolute(real_path, .{ .mode = .read_only });
         defer file.close();
 
         if (try isExecutable(file)) {
-            try self.addExecutable(entry.name, abs_path);
+            if (entry.kind == .file) {
+                try self.addExecutable(entry.name, real_path);
+            } else {
+                const dir_path = try dir.realpathAlloc(self.allocator, ".");
+                defer self.allocator.free(dir_path);
+                const concat_path = try std.fs.path.join(self.allocator, &[_][]const u8{ dir_path, entry.name });
+                defer self.allocator.free(concat_path);
+                try self.addExecutable(entry.name, concat_path);
+            }
         }
     }
 
@@ -80,7 +88,9 @@ pub const ExecLookup = struct {
 
         var it = dir.iterate();
         while (try it.next()) |entry| {
-            try self.processEntry(dir, entry);
+            self.processEntry(dir, entry) catch {
+                continue;
+            };
         }
     }
 
@@ -90,7 +100,9 @@ pub const ExecLookup = struct {
         var dir_it = std.mem.split(u8, path_value, ":");
 
         while (dir_it.next()) |dir_path| {
-            try self.scanDir(dir_path);
+            self.scanDir(dir_path) catch {
+                continue;
+            };
         }
     }
 
