@@ -1,5 +1,6 @@
 const std = @import("std");
 const commands = @import("commands.zig");
+const utils = @import("utils.zig");
 
 const Builtins = enum { exit, echo, type };
 
@@ -23,6 +24,10 @@ pub fn main() !void {
         }
         argv.deinit();
     }
+
+    // Exec lookup
+    var lookup = try utils.createExecLookup(allocator);
+    defer lookup.deinit();
 
     while (true) {
         try stdout.print("$ ", .{});
@@ -58,14 +63,16 @@ pub fn main() !void {
             }
         }
 
+        defer {
+            for (argv.items) |arg| {
+                allocator.free(arg);
+            }
+        }
+
         if (argv.items.len == 0) continue;
 
         const command = std.meta.stringToEnum(Builtins, argv.items[0]) orelse {
             try stdout.print("{s}: command not found\n", .{argv.items[0]});
-            // Free current command arguments
-            for (argv.items) |arg| {
-                allocator.free(arg);
-            }
             continue;
         };
 
@@ -80,19 +87,17 @@ pub fn main() !void {
             },
             .type => {
                 if (argv.items.len != 2) continue;
-                _ = std.meta.stringToEnum(Builtins, argv.items[1]) orelse {
-                    if (commands.typeHandler(allocator, argv.items.len, argv.items, stdout) == 1) {
-                        try stdout.print("{s}: not found\n", .{argv.items[1]});
-                    }
+                const target = argv.items[1];
+                _ = std.meta.stringToEnum(Builtins, target) orelse {
+                    const target_path = lookup.get(target) orelse {
+                        try stdout.print("{s}: not found\n", .{target});
+                        continue;
+                    };
+                    try stdout.print("{s} is {s}\n", .{ target, target_path });
                     continue;
                 };
-                try stdout.print("{s} is a shell builtin\n", .{argv.items[1]});
+                try stdout.print("{s} is a shell builtin\n", .{target});
             },
-        }
-
-        // Free current command arguments
-        for (argv.items) |arg| {
-            allocator.free(arg);
         }
     }
 }
