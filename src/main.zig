@@ -1,5 +1,4 @@
 const std = @import("std");
-const utils = @import("utils.zig");
 const commands = @import("commands.zig");
 
 const Builtins = enum { exit, echo, type };
