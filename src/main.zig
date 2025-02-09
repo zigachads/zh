@@ -4,6 +4,12 @@ const utils = @import("utils.zig");
 
 const Builtins = enum { exit, echo, type };
 
+fn childProcessHelper(allocator: std.mem.Allocator, argv: []const []const u8) !std.process.Child.Term {
+    var child = std.process.Child.init(argv, allocator);
+
+    return try child.spawnAndWait();
+}
+
 pub fn main() !void {
     // Initialize GPA
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -38,25 +44,29 @@ pub fn main() !void {
         try arguments.parse(user_input);
 
         if (arguments.argc() == 0) continue;
-        const items = arguments.argv().*;
+        const argv = arguments.argv().*;
 
-        const command = std.meta.stringToEnum(Builtins, items[0]) orelse {
-            try stdout.print("{s}: command not found\n", .{items[0]});
+        const command = std.meta.stringToEnum(Builtins, argv[0]) orelse {
+            if (exec_lookup.hasExecutable(argv[0])) {
+                _ = childProcessHelper(allocator, argv) catch {};
+            } else {
+                try stdout.print("{s}: command not found\n", .{argv[0]});
+            }
             continue;
         };
 
         switch (command) {
             .exit => {
-                if (commands.exitHandler(items) == 0) {
+                if (commands.exitHandler(argv) == 0) {
                     return;
                 }
             },
             .echo => {
-                _ = commands.echoHandler(items, stdout);
+                _ = commands.echoHandler(argv, stdout);
             },
             .type => {
-                if (items.len != 2) continue;
-                const target = items[1];
+                if (argv.len != 2) continue;
+                const target = argv[1];
                 _ = std.meta.stringToEnum(Builtins, target) orelse {
                     const target_path = exec_lookup.getExecutablePath(target) orelse {
                         try stdout.print("{s}: not found\n", .{target});
