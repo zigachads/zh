@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtins = @import("builtins.zig");
 const utils = @import("utils.zig");
+const parser = @import("parser.zig");
 
 fn childProcessHelper(allocator: std.mem.Allocator, argv: []const []const u8) !std.process.Child.Term {
     var child = std.process.Child.init(argv, allocator);
@@ -20,8 +21,8 @@ pub fn main() !u8 {
     defer buffer.deinit();
 
     // Argv
-    var arguments = utils.Arguments.init(allocator);
-    defer arguments.deinit();
+    var _parser = parser.Parser.init(allocator);
+    defer _parser.deinit();
 
     // ExecLookup
     var exec_lookup = utils.ExecLookup.init(allocator);
@@ -39,12 +40,13 @@ pub fn main() !u8 {
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         const user_input = buffer.items;
 
-        arguments.parse(user_input) catch {
+        _parser.parse(user_input) catch {
             try stdout.print("zshell: parse error\n", .{});
+            continue;
         };
 
-        if (arguments.argc() == 0) continue;
-        const argv = arguments.argv().*;
+        if (_parser.argc() == 0) continue;
+        const argv = _parser.argv().*;
 
         const command = std.meta.stringToEnum(builtins.Builtins, argv[0]) orelse {
             if (exec_lookup.hasExecutable(argv[0])) {
