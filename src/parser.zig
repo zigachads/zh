@@ -25,6 +25,7 @@ pub const Parser = struct {
         var buffer = std.ArrayList(u8).init(self.allocator);
         defer buffer.deinit();
 
+        var last_char: u8 = 0;
         for (input, 0..) |char, i| {
             var char_to_push: ?u8 = null;
             const stack_size = self.stack.size();
@@ -34,7 +35,7 @@ pub const Parser = struct {
             const char_is_quote = char_is_single_quote or char_is_double_quote;
             const char_is_space = char == ' ';
 
-            if (!char_is_space and stack_size == 0) {
+            if (last_char == '\\' and stack_top == ' ') {} else if (!char_is_space and stack_size == 0) {
                 if (char_is_quote) {
                     char_to_push = char;
                 } else {
@@ -68,10 +69,16 @@ pub const Parser = struct {
 
             // std.debug.print("char {c}, state {any}\n", .{ char, state });
             if (self.stack.size() > 0 and char != append_sentry) {
+                if (last_char == '\\' and stack_top == ' ') {
+                    _ = buffer.popOrNull();
+                }
                 try buffer.append(char);
             }
 
-            if (i != last_char_index) continue;
+            if (i != last_char_index) {
+                last_char = char;
+                continue;
+            }
 
             if (self.stack.isEmpty()) {
                 return;
