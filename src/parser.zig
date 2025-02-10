@@ -3,6 +3,12 @@ const utils = @import("utils.zig");
 
 const testing = std.testing;
 
+const BackSlashState = enum {
+    idle,
+    pending,
+    ready,
+};
+
 pub const Parser = struct {
     allocator: std.mem.Allocator,
     args: std.ArrayList([]const u8),
@@ -26,37 +32,48 @@ pub const Parser = struct {
         defer buffer.deinit();
 
         var last_char: u8 = 0;
+        var back_slash_state: BackSlashState = .idle;
         for (input, 0..) |char, i| {
-            var char_to_push: ?u8 = null;
+            var char_to_push: u8 = 0;
+
             const stack_size = self.stack.size();
             const stack_top = self.stack.top orelse 0;
+
             const char_is_double_quote = char == '"';
             const char_is_single_quote = char == '\'';
             const char_is_quote = char_is_single_quote or char_is_double_quote;
             const char_is_space = char == ' ';
 
-            if (last_char == '\\' and stack_top == ' ') {} else if (!char_is_space and stack_size == 0) {
-                if (char_is_quote) {
-                    char_to_push = char;
-                } else {
-                    char_to_push = ' ';
-                }
-            } else if (stack_size > 0 and char_is_quote and (stack_top == char or stack_top == ' ')) {
-                char_to_push = char;
-            } else if (stack_top == ' ' and stack_size == 1 and char_is_space) {
-                char_to_push = char;
+            switch (back_slash_state) {
+                .ready, .pending => {},
+                .idle => {
+                    if (char == '\\' and (stack_top == '"' or stack_top == ' ' or stack_size == 0)) {
+                        back_slash_state = .pending;
+                    }
+
+                    if (!char_is_space and stack_size == 0) {
+                        if (char_is_quote) {
+                            char_to_push = char;
+                        } else {
+                            char_to_push = ' ';
+                        }
+                    } else if (stack_size > 0 and char_is_quote and (stack_top == char or stack_top == ' ')) {
+                        char_to_push = char;
+                    } else if (stack_top == ' ' and stack_size == 1 and char_is_space) {
+                        char_to_push = ' ';
+                    }
+                },
             }
 
-            var append_sentry: u8 = 0;
-            if (char_to_push) |c| {
-                append_sentry = c;
-                if (stack_top == c) {
+            if (char_to_push != 0) {
+                if (stack_top == char_to_push) {
                     _ = self.stack.pop();
                 } else {
                     if (stack_size == 0 and (char_is_quote)) {
                         try self.stack.push(' ');
                     }
-                    try self.stack.push(c);
+
+                    try self.stack.push(char_to_push);
                 }
 
                 if (self.stack.size() == 0) {
@@ -67,11 +84,23 @@ pub const Parser = struct {
                 }
             }
 
-            // std.debug.print("char {c}, state {any}\n", .{ char, state });
-            if (self.stack.size() > 0 and char != append_sentry) {
-                if (last_char == '\\' and stack_top == ' ') {
-                    _ = buffer.popOrNull();
+            if (self.stack.size() > 0 and char_to_push != char) {
+                switch (back_slash_state) {
+                    .pending => {
+                        back_slash_state = .ready;
+                    },
+                    .ready => {
+                        if (stack_top == ' ') {
+                            _ = buffer.popOrNull();
+                        } else if (stack_top == '"' and (char == '\\' or char_is_double_quote or char_is_space)) {
+                            _ = buffer.popOrNull();
+                        }
+
+                        back_slash_state = .idle;
+                    },
+                    else => {},
                 }
+
                 try buffer.append(char);
             }
 
@@ -241,4 +270,70 @@ test "Parser - memory management" {
     try testing.expectEqual(@as(usize, 2), args.argc());
 
     args.deinit();
+}
+
+test "Parser - escaped single quotes and backslashes" {
+    var args = Parser.init(testing.allocator);
+    defer args.deinit();
+
+    try args.parse("\"world'hello'\\'shell\"");
+    try testing.expectEqual(@as(usize, 1), args.argc());
+    try testing.expectEqualStrings("world'hello'\\'shell", args.argv().*[0]);
+}
+
+test "Parser - escaped double quotes" {
+    var args = Parser.init(testing.allocator);
+    defer args.deinit();
+
+    try args.parse("\"world\\\"insidequotes\"hello\\\"");
+    try testing.expectEqual(@as(usize, 1), args.argc());
+    try testing.expectEqualStrings("world\"insidequoteshello\"", args.argv().*[0]);
+}
+
+test "Parser - mixed quotes with escapes" {
+    var args = Parser.init(testing.allocator);
+    defer args.deinit();
+
+    try args.parse("\"mixed\\\"quote'test'\\\\\"");
+    try testing.expectEqual(@as(usize, 1), args.argc());
+    try testing.expectEqualStrings("mixed\"quote'test'\\", args.argv().*[0]);
+}
+
+test "Parser - complex path with spaces and escapes" {
+    var args = Parser.init(testing.allocator);
+    defer args.deinit();
+
+    try args.parse("\"/tmp/baz/'f 34'\" \"/tmp/baz/'f  \\81'\" \"/tmp/baz/'f \\4\\'\"");
+    try testing.expectEqual(@as(usize, 3), args.argc());
+    try testing.expectEqualStrings("/tmp/baz/'f 34'", args.argv().*[0]);
+    try testing.expectEqualStrings("/tmp/baz/'f  \\81'", args.argv().*[1]);
+    try testing.expectEqualStrings("/tmp/baz/'f \\4\\'", args.argv().*[2]);
+}
+
+test "Parser - multiple spaces with escapes" {
+    var args = Parser.init(testing.allocator);
+    defer args.deinit();
+
+    try args.parse("example\\ \\ \\ \\ \\ \\ hello");
+    try testing.expectEqual(@as(usize, 1), args.argc());
+    try testing.expectEqualStrings("example      hello", args.argv().*[0]);
+}
+
+test "Parser - escaped n character" {
+    var args = Parser.init(testing.allocator);
+    defer args.deinit();
+
+    try args.parse("script\\ntest");
+    try testing.expectEqual(@as(usize, 1), args.argc());
+    try testing.expectEqualStrings("scriptntest", args.argv().*[0]);
+}
+
+test "Parser - escaped quotes within single quotes" {
+    var args = Parser.init(testing.allocator);
+    defer args.deinit();
+
+    try args.parse("\\'\\\"hello script\\\"\\\'");
+    try testing.expectEqual(@as(usize, 2), args.argc());
+    try testing.expectEqualStrings("'\"hello", args.argv().*[0]);
+    try testing.expectEqualStrings("script\"'", args.argv().*[1]);
 }
