@@ -39,7 +39,9 @@ pub fn main() !u8 {
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         const user_input = buffer.items;
 
-        try arguments.parse(user_input);
+        arguments.parse(user_input) catch {
+            try stdout.print("zshell: parse error\n", .{});
+        };
 
         if (arguments.argc() == 0) continue;
         const argv = arguments.argv().*;

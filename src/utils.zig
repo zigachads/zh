@@ -122,39 +122,75 @@ pub const ExecLookup = struct {
 pub const Arguments = struct {
     args: std.ArrayList([]const u8),
     allocator: std.mem.Allocator,
+    stack: Stack(u8),
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator) Self {
-        return .{
-            .args = std.ArrayList([]const u8).init(allocator),
-            .allocator = allocator,
-        };
+        return .{ .args = std.ArrayList([]const u8).init(allocator), .allocator = allocator, .stack = Stack(u8).init(allocator) };
+    }
+
+    fn isQuote(char: u8) bool {
+        return char == '\'' or char == '"';
     }
 
     pub fn parse(self: *Self, input: []const u8) !void {
         self.clear();
 
-        var in_word = false;
-        var start: usize = 0;
+        const last_char_index = input.len - 1;
+        var buffer = std.ArrayList(u8).init(self.allocator);
+        defer buffer.deinit();
 
         for (input, 0..) |char, i| {
-            if (char == ' ') {
-                if (in_word) {
-                    const arg = try self.allocator.dupe(u8, input[start..i]);
-                    errdefer self.allocator.free(arg);
-                    try self.args.append(arg);
-                    in_word = false;
+            var char_to_push: ?u8 = null;
+            const stack_size = self.stack.size();
+            const stack_top = self.stack.top;
+            const char_is_quote = isQuote(char);
+            const char_is_space = char == ' ';
+
+            if (!char_is_space and stack_size == 0) {
+                if (char_is_quote) {
+                    char_to_push = char;
+                } else {
+                    char_to_push = ' ';
                 }
-            } else if (!in_word) {
-                start = i;
-                in_word = true;
+            } else if (stack_size > 0 and char_is_quote) {
+                char_to_push = char;
+            } else if (stack_top != null and stack_top == ' ' and stack_size == 1 and char_is_space) {
+                char_to_push = char;
             }
 
-            if (i == input.len - 1 and in_word) {
-                const arg = try self.allocator.dupe(u8, input[start..input.len]);
+            if (char_to_push) |c| {
+                if (stack_top != null and stack_top == c) {
+                    _ = self.stack.pop();
+                } else {
+                    if (stack_size == 0 and char_is_quote) try self.stack.push(' ');
+                    try self.stack.push(c);
+                }
+
+                if (self.stack.size() == 0) {
+                    const arg = try self.allocator.dupe(u8, buffer.items);
+                    while (buffer.items.len > 0) _ = buffer.pop();
+                    errdefer self.allocator.free(arg);
+                    try self.args.append(arg);
+                }
+            }
+
+            if (self.stack.size() > 0 and !char_is_quote) {
+                try buffer.append(char);
+            }
+
+            if (i != last_char_index) continue;
+
+            if (self.stack.isEmpty()) {
+                return;
+            } else if (self.stack.size() == 1 and self.stack.top == ' ') {
+                const arg = try self.allocator.dupe(u8, buffer.items);
+                while (buffer.items.len > 0) _ = buffer.pop();
                 errdefer self.allocator.free(arg);
                 try self.args.append(arg);
+            } else {
+                return error.ParseError;
             }
         }
     }
@@ -172,10 +208,59 @@ pub const Arguments = struct {
             self.allocator.free(arg);
         }
         self.args.clearRetainingCapacity();
+        self.stack.clear();
     }
 
     pub fn deinit(self: *Self) void {
         self.clear();
         self.args.deinit();
+        self.stack.deinit();
     }
 };
+
+pub fn Stack(comptime T: type) type {
+    return struct {
+        items: std.ArrayList(T),
+        top: ?T,
+
+        const Self = @This();
+
+        pub fn init(allocator: std.mem.Allocator) Self {
+            return Self{ .items = std.ArrayList(T).init(allocator), .top = null };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.items.deinit();
+        }
+
+        pub fn push(self: *Self, item: T) !void {
+            try self.items.append(item);
+            self.top = item;
+        }
+
+        pub fn pop(self: *Self) ?T {
+            if (self.isEmpty()) return null;
+            const result = self.items.pop();
+            if (!self.isEmpty()) {
+                self.top = self.items.getLast();
+            } else {
+                self.top = null;
+            }
+            return result;
+        }
+
+        pub fn isEmpty(self: *Self) bool {
+            return self.items.items.len == 0;
+        }
+
+        pub fn clear(self: *Self) void {
+            while (!self.isEmpty()) {
+                _ = self.pop();
+            }
+        }
+
+        pub fn size(self: *Self) usize {
+            return self.items.items.len;
+        }
+    };
+}
