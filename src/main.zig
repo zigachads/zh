@@ -3,6 +3,12 @@ const builtins = @import("builtins.zig");
 const utils = @import("utils.zig");
 const parser = @import("parser.zig");
 
+test {
+    comptime {
+        _ = @import("./test/tests.zig");
+    }
+}
+
 fn childProcessHelper(allocator: std.mem.Allocator, argv: []const []const u8) !std.process.Child.Term {
     var child = std.process.Child.init(argv, allocator);
 
@@ -29,6 +35,9 @@ pub fn main() !u8 {
     defer exec_lookup.deinit();
     try exec_lookup.populate();
 
+    // NOTE: implement pipe wtih a custom writer struct
+    // for childprocess use collectOutput
+
     while (true) {
         try stdout.print("$ ", .{});
 
@@ -40,13 +49,18 @@ pub fn main() !u8 {
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         const user_input = buffer.items;
 
-        _parser.parse(user_input) catch {
+        const argv = _parser.parse(user_input) catch {
             try stdout.print("zshell: parse error\n", .{});
             continue;
         };
+        defer {
+            for (argv) |arg| {
+                allocator.free(arg);
+            }
+            allocator.free(argv);
+        }
 
-        if (_parser.argc() == 0) continue;
-        const argv = _parser.argv().*;
+        if (argv.len == 0) continue;
 
         const command = std.meta.stringToEnum(builtins.Builtins, argv[0]) orelse {
             if (exec_lookup.hasExecutable(argv[0])) {
