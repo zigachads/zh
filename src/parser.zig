@@ -77,10 +77,7 @@ pub const Parser = struct {
                 }
 
                 if (self.stack.size() == 0) {
-                    const arg = try self.allocator.dupe(u8, buffer.items);
-                    while (buffer.items.len > 0) _ = buffer.pop();
-                    errdefer self.allocator.free(arg);
-                    try args.append(arg);
+                    try args.append(try buffer.toOwnedSlice());
                 }
             }
 
@@ -112,10 +109,7 @@ pub const Parser = struct {
             if (self.stack.isEmpty()) {
                 return args.toOwnedSlice();
             } else if (self.stack.size() == 1 and self.stack.top == ' ') {
-                const arg = try self.allocator.dupe(u8, buffer.items);
-                while (buffer.items.len > 0) _ = buffer.pop();
-                errdefer self.allocator.free(arg);
-                try args.append(arg);
+                try args.append(try buffer.toOwnedSlice());
             } else {
                 return error.ParseError;
             }
