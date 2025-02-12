@@ -4,9 +4,9 @@ const utils = @import("utils.zig");
 const testing = std.testing;
 
 const BackSlashState = enum {
-    idle,
-    pending,
-    ready,
+    Idle,
+    Pending,
+    Ready,
 };
 
 pub const Parser = struct {
@@ -25,14 +25,15 @@ pub const Parser = struct {
     pub fn parse(self: *Self, input: []const u8) ![]const []const u8 {
         self.stack.clear();
 
-        const last_char_index = if (input.len == 0) 0 else input.len - 1;
         var buffer = std.ArrayList(u8).init(self.allocator);
-        var args = std.ArrayList([]const u8).init(self.allocator);
-        defer args.deinit();
         defer buffer.deinit();
 
+        var args = std.ArrayList([]const u8).init(self.allocator);
+        defer args.deinit();
+
         var last_char: u8 = 0;
-        var back_slash_state: BackSlashState = .idle;
+        var back_slash_state: BackSlashState = .Idle;
+        const last_char_index = if (input.len == 0) 0 else input.len - 1;
         for (input, 0..) |char, i| {
             var char_to_push: u8 = 0;
 
@@ -45,10 +46,10 @@ pub const Parser = struct {
             const char_is_space = char == ' ';
 
             switch (back_slash_state) {
-                .ready, .pending => {},
-                .idle => {
+                .Ready, .Pending => {},
+                .Idle => {
                     if (char == '\\' and (stack_top == '"' or stack_top == ' ' or stack_size == 0)) {
-                        back_slash_state = .pending;
+                        back_slash_state = .Pending;
                     }
 
                     if (!char_is_space and stack_size == 0) {
@@ -83,17 +84,17 @@ pub const Parser = struct {
 
             if (self.stack.size() > 0 and char_to_push != char) {
                 switch (back_slash_state) {
-                    .pending => {
-                        back_slash_state = .ready;
+                    .Pending => {
+                        back_slash_state = .Ready;
                     },
-                    .ready => {
+                    .Ready => {
                         if (stack_top == ' ') {
                             _ = buffer.popOrNull();
                         } else if (stack_top == '"' and (char == '\\' or char_is_double_quote or char_is_space)) {
                             _ = buffer.popOrNull();
                         }
 
-                        back_slash_state = .idle;
+                        back_slash_state = .Idle;
                     },
                     else => {},
                 }
