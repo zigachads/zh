@@ -82,7 +82,7 @@ pub const Writer = struct {
         return true;
     }
 
-    pub fn is_default(self: Self) bool {
+    pub fn is_default(self: *Self) bool {
         return self._file == null;
     }
 

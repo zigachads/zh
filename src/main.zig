@@ -62,21 +62,16 @@ pub fn main() !u8 {
 
         if (raw_argv.len == 0) continue;
 
-        var argv: []const []const u8 = undefined;
-        if (raw_argv.len >= 3 and (std.mem.eql(u8, raw_argv[raw_argv.len - 2], ">") or std.mem.eql(u8, raw_argv[raw_argv.len - 2], "1>"))) {
-            if (stdout.to_file(raw_argv[raw_argv.len - 1])) {
-                argv = raw_argv[0 .. raw_argv.len - 2];
-            } else {
-                try stderr.writer.print("zshell: redirect failed\n", .{});
-                continue;
-            }
-        } else {
-            argv = raw_argv;
-        }
+        const argv = parser.redirectHandler(
+            allocator,
+            raw_argv,
+            &stdout,
+            &stderr,
+        ) catch raw_argv;
 
         const command = std.meta.stringToEnum(builtins.Builtins, argv[0]) orelse {
             if (exec_lookup.hasExecutable(argv[0])) {
-                _ = builtins.execHandler(allocator, argv, stdout, stderr) catch {};
+                _ = builtins.execHandler(allocator, argv, &stdout, &stderr) catch {};
             } else {
                 try stderr.writer.print("{s}: command not found\n", .{argv[0]});
             }
@@ -85,7 +80,7 @@ pub fn main() !u8 {
 
         switch (command) {
             .exit => {
-                switch (try builtins.exitHandler(argv, stderr)) {
+                switch (try builtins.exitHandler(argv, &stderr)) {
                     .none => {},
                     .peace_quit => {
                         return 0;
@@ -96,16 +91,16 @@ pub fn main() !u8 {
                 }
             },
             .echo => {
-                _ = try builtins.echoHandler(argv, stdout);
+                _ = try builtins.echoHandler(argv, &stdout);
             },
             .type => {
-                _ = try builtins.typeHandler(argv, exec_lookup, stdout, stderr);
+                _ = try builtins.typeHandler(argv, &exec_lookup, &stdout, &stderr);
             },
             .pwd => {
-                _ = try builtins.pwdHandler(allocator, argv, stdout, stderr);
+                _ = try builtins.pwdHandler(allocator, argv, &stdout, &stderr);
             },
             .cd => {
-                _ = try builtins.cdHandler(allocator, argv, stderr);
+                _ = try builtins.cdHandler(allocator, argv, &stderr);
             },
         }
     }

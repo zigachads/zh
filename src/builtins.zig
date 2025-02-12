@@ -8,7 +8,7 @@ pub const BuiltinAction = enum { panic_quit, peace_quit, none };
 
 pub fn exitHandler(
     argv: []const []const u8,
-    stderr: writer.Writer,
+    stderr: *writer.Writer,
 ) std.fs.File.WriteError!BuiltinAction {
     if (argv.len != 2) {
         try stderr.writer.print("exit: arguments number mismatch, {d} vs 2\n", .{argv.len});
@@ -27,7 +27,7 @@ pub fn exitHandler(
 
 pub fn echoHandler(
     argv: []const []const u8,
-    stdout: writer.Writer,
+    stdout: *writer.Writer,
 ) !BuiltinAction {
     for (argv[1..argv.len], 0..) |word, index| {
         if (index != 0)
@@ -40,9 +40,9 @@ pub fn echoHandler(
 
 pub fn typeHandler(
     argv: []const []const u8,
-    exec_lookup: utils.ExecLookup,
-    stdout: writer.Writer,
-    stderr: writer.Writer,
+    exec_lookup: *utils.ExecLookup,
+    stdout: *writer.Writer,
+    stderr: *writer.Writer,
 ) !BuiltinAction {
     if (argv.len != 2) {
         try stderr.writer.print("type: arguments number mismatch, {d} vs 2\n", .{argv.len});
@@ -64,8 +64,8 @@ pub fn typeHandler(
 pub fn pwdHandler(
     allocator: std.mem.Allocator,
     argv: []const []const u8,
-    stdout: writer.Writer,
-    stderr: writer.Writer,
+    stdout: *writer.Writer,
+    stderr: *writer.Writer,
 ) !BuiltinAction {
     if (argv.len != 1) {
         try stderr.writer.print("pwd: too many arguments\n", .{});
@@ -80,7 +80,7 @@ pub fn pwdHandler(
 pub fn cdHandler(
     allocator: std.mem.Allocator,
     argv: []const []const u8,
-    stderr: writer.Writer,
+    stderr: *writer.Writer,
 ) !BuiltinAction {
     if (argv.len != 2) {
         try stderr.writer.print("cd: arguments number mismatch, {d} vs 2\n", .{argv.len});
@@ -141,8 +141,8 @@ pub fn cdHandler(
 pub fn execHandler(
     allocator: std.mem.Allocator,
     argv: []const []const u8,
-    stdout: writer.Writer,
-    stderr: writer.Writer,
+    stdout: *writer.Writer,
+    stderr: *writer.Writer,
 ) !std.process.Child.Term {
     const stdout_is_default = stdout.is_default();
     const stderr_is_default = stderr.is_default();
