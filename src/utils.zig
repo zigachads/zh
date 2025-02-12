@@ -165,3 +165,16 @@ pub fn Stack(comptime T: type) type {
         }
     };
 }
+
+pub fn fifoToOwnedArrayList(fifo: *std.io.PollFifo) std.ArrayList(u8) {
+    if (fifo.head > 0) {
+        @memcpy(fifo.buf[0..fifo.count], fifo.buf[fifo.head..][0..fifo.count]);
+    }
+    const result = std.ArrayList(u8){
+        .items = fifo.buf[0..fifo.count],
+        .capacity = fifo.buf.len,
+        .allocator = fifo.allocator,
+    };
+    fifo.* = std.io.PollFifo.init(fifo.allocator);
+    return result;
+}

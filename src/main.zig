@@ -2,17 +2,12 @@ const std = @import("std");
 const builtins = @import("builtins.zig");
 const utils = @import("utils.zig");
 const parser = @import("parser.zig");
+const writer = @import("writer.zig");
 
 test {
     comptime {
         _ = @import("./test/tests.zig");
     }
-}
-
-fn childProcessHelper(allocator: std.mem.Allocator, argv: []const []const u8) !std.process.Child.Term {
-    var child = std.process.Child.init(argv, allocator);
-
-    return try child.spawnAndWait();
 }
 
 pub fn main() !u8 {
@@ -21,8 +16,7 @@ pub fn main() !u8 {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // stdout and buffer
-    const stdout = std.io.getStdOut().writer();
+    // Buffer
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
@@ -35,11 +29,17 @@ pub fn main() !u8 {
     defer exec_lookup.deinit();
     try exec_lookup.populate();
 
-    // NOTE: implement pipe wtih a custom writer struct
-    // for childprocess use collectOutput
+    // Writer
+    var stdout = writer.Writer.init(&std.io.getStdOut);
+    var stderr = writer.Writer.init(&std.io.getStdOut);
 
     while (true) {
-        try stdout.print("$ ", .{});
+        // Writer reset
+        _ = stdout.to_default();
+        _ = stderr.to_default();
+
+        // Prompt
+        try stdout.writer.print("$ ", .{});
 
         // Clear previous input and arguments
         buffer.clearRetainingCapacity();
@@ -49,31 +49,43 @@ pub fn main() !u8 {
         try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
         const user_input = buffer.items;
 
-        const argv = _parser.parse(user_input) catch {
-            try stdout.print("zshell: parse error\n", .{});
+        const raw_argv = _parser.parse(user_input) catch {
+            try stderr.writer.print("zshell: parse error\n", .{});
             continue;
         };
         defer {
-            for (argv) |arg| {
+            for (raw_argv) |arg| {
                 allocator.free(arg);
             }
-            allocator.free(argv);
+            allocator.free(raw_argv);
         }
 
-        if (argv.len == 0) continue;
+        if (raw_argv.len == 0) continue;
+
+        var argv: []const []const u8 = undefined;
+        if (raw_argv.len >= 3 and (std.mem.eql(u8, raw_argv[raw_argv.len - 2], ">") or std.mem.eql(u8, raw_argv[raw_argv.len - 2], "1>"))) {
+            if (stdout.to_file(raw_argv[raw_argv.len - 1])) {
+                argv = raw_argv[0 .. raw_argv.len - 2];
+            } else {
+                try stderr.writer.print("zshell: redirect failed\n", .{});
+                continue;
+            }
+        } else {
+            argv = raw_argv;
+        }
 
         const command = std.meta.stringToEnum(builtins.Builtins, argv[0]) orelse {
             if (exec_lookup.hasExecutable(argv[0])) {
-                _ = childProcessHelper(allocator, argv) catch {};
+                _ = builtins.execHandler(allocator, argv, stdout, stderr) catch {};
             } else {
-                try stdout.print("{s}: command not found\n", .{argv[0]});
+                try stderr.writer.print("{s}: command not found\n", .{argv[0]});
             }
             continue;
         };
 
         switch (command) {
             .exit => {
-                switch (try builtins.exitHandler(argv, stdout)) {
+                switch (try builtins.exitHandler(argv, stderr)) {
                     .none => {},
                     .peace_quit => {
                         return 0;
@@ -87,13 +99,13 @@ pub fn main() !u8 {
                 _ = try builtins.echoHandler(argv, stdout);
             },
             .type => {
-                _ = try builtins.typeHandler(argv, exec_lookup, stdout);
+                _ = try builtins.typeHandler(argv, exec_lookup, stdout, stderr);
             },
             .pwd => {
-                _ = try builtins.pwdHandler(allocator, argv, stdout);
+                _ = try builtins.pwdHandler(allocator, argv, stdout, stderr);
             },
             .cd => {
-                _ = try builtins.cdHandler(allocator, argv, stdout);
+                _ = try builtins.cdHandler(allocator, argv, stderr);
             },
         }
     }
