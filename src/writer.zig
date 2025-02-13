@@ -28,7 +28,7 @@ pub const Writer = struct {
         }
     }
 
-    pub fn to_file(self: *Self, path: []const u8) bool {
+    pub fn to_file(self: *Self, path: []const u8, try_append: bool) bool {
         if (self._file) |f| {
             f.close();
             self._file = null;
@@ -37,25 +37,23 @@ pub const Writer = struct {
         var try_create = false;
 
         const file_open_flags: std.fs.File.OpenFlags = .{ .mode = .read_write };
-        if (std.fs.path.isAbsolute(path)) {
-            if (std.fs.openFileAbsolute(path, file_open_flags)) |f| {
-                self._file = f;
-            } else |err| {
-                if (err == std.fs.File.OpenError.FileNotFound) {
-                    try_create = true;
-                } else {
-                    return false;
-                }
-            }
-        } else {
-            if (std.fs.cwd().openFile(path, file_open_flags)) |f| {
-                self._file = f;
-            } else |err| {
-                if (err == std.fs.File.OpenError.FileNotFound) {
-                    try_create = true;
-                } else {
-                    return false;
-                }
+        if (if (std.fs.path.isAbsolute(path)) std.fs.openFileAbsolute(
+            path,
+            file_open_flags,
+        ) else std.fs.cwd().openFile(
+            path,
+            file_open_flags,
+        )) |f| {
+            if (try_append) f.seekFromEnd(0) catch {
+                f.close();
+                return false;
+            };
+            self._file = f;
+        } else |err| {
+            if (err == std.fs.File.OpenError.FileNotFound) {
+                try_create = true;
+            } else {
+                return false;
             }
         }
 

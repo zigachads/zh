@@ -126,26 +126,36 @@ pub const Parser = struct {
 };
 
 pub fn redirectHandler(
-    allocator: std.mem.Allocator,
     raw_argv: []const []const u8,
     stdout: *writer.Writer,
     stderr: *writer.Writer,
 ) ![]const []const u8 {
     if (!(raw_argv.len >= 3)) return error.ParseError;
 
-    var argv: []const []const u8 = undefined;
     if (std.mem.eql(u8, raw_argv[raw_argv.len - 2], ">") or std.mem.eql(u8, raw_argv[raw_argv.len - 2], "1>")) {
-        if (stdout.to_file(raw_argv[raw_argv.len - 1])) {
-            argv = try allocator.dupe([]const u8, raw_argv[0 .. raw_argv.len - 2]);
-            return argv;
+        if (stdout.to_file(raw_argv[raw_argv.len - 1], false)) {
+            return raw_argv[0 .. raw_argv.len - 2];
         } else {
             try stderr.writer.print("zshell: redirect failed\n", .{});
             return error.RedirectError;
         }
     } else if (std.mem.eql(u8, raw_argv[raw_argv.len - 2], "2>")) {
-        if (stderr.to_file(raw_argv[raw_argv.len - 1])) {
-            argv = try allocator.dupe([]const u8, raw_argv[0 .. raw_argv.len - 2]);
-            return argv;
+        if (stderr.to_file(raw_argv[raw_argv.len - 1], false)) {
+            return raw_argv[0 .. raw_argv.len - 2];
+        } else {
+            try stderr.writer.print("zshell: redirect failed\n", .{});
+            return error.RedirectError;
+        }
+    } else if (std.mem.eql(u8, raw_argv[raw_argv.len - 2], ">>") or std.mem.eql(u8, raw_argv[raw_argv.len - 2], "1>>")) {
+        if (stdout.to_file(raw_argv[raw_argv.len - 1], true)) {
+            return raw_argv[0 .. raw_argv.len - 2];
+        } else {
+            try stderr.writer.print("zshell: redirect failed\n", .{});
+            return error.RedirectError;
+        }
+    } else if (std.mem.eql(u8, raw_argv[raw_argv.len - 2], "2>>")) {
+        if (stderr.to_file(raw_argv[raw_argv.len - 1], true)) {
+            return raw_argv[0 .. raw_argv.len - 2];
         } else {
             try stderr.writer.print("zshell: redirect failed\n", .{});
             return error.RedirectError;
