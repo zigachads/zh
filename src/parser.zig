@@ -1,9 +1,53 @@
 const std = @import("std");
 
-const utils = @import("utils.zig");
 const writer = @import("writer.zig");
 
-const testing = std.testing;
+fn Stack(comptime T: type) type {
+    return struct {
+        items: std.ArrayList(T),
+        top: ?T,
+
+        const Self = @This();
+
+        pub fn init(allocator: std.mem.Allocator) Self {
+            return Self{ .items = std.ArrayList(T).init(allocator), .top = null };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.items.deinit();
+        }
+
+        pub fn push(self: *Self, item: T) !void {
+            try self.items.append(item);
+            self.top = item;
+        }
+
+        pub fn pop(self: *Self) ?T {
+            if (self.isEmpty()) return null;
+            const result = self.items.pop();
+            if (!self.isEmpty()) {
+                self.top = self.items.getLast();
+            } else {
+                self.top = null;
+            }
+            return result;
+        }
+
+        pub fn isEmpty(self: *Self) bool {
+            return self.items.items.len == 0;
+        }
+
+        pub fn clear(self: *Self) void {
+            while (!self.isEmpty()) {
+                _ = self.pop();
+            }
+        }
+
+        pub fn size(self: *Self) usize {
+            return self.items.items.len;
+        }
+    };
+}
 
 const BackSlashState = enum {
     Idle,
@@ -13,14 +57,14 @@ const BackSlashState = enum {
 
 pub const Parser = struct {
     allocator: std.mem.Allocator,
-    stack: utils.Stack(u8),
+    stack: Stack(u8),
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
-            .stack = utils.Stack(u8).init(allocator),
+            .stack = Stack(u8).init(allocator),
         };
     }
 
