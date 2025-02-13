@@ -2,53 +2,6 @@ const std = @import("std");
 
 const writer = @import("writer.zig");
 
-fn Stack(comptime T: type) type {
-    return struct {
-        items: std.ArrayList(T),
-        top: ?T,
-
-        const Self = @This();
-
-        pub fn init(allocator: std.mem.Allocator) Self {
-            return Self{ .items = std.ArrayList(T).init(allocator), .top = null };
-        }
-
-        pub fn deinit(self: *Self) void {
-            self.items.deinit();
-        }
-
-        pub fn push(self: *Self, item: T) !void {
-            try self.items.append(item);
-            self.top = item;
-        }
-
-        pub fn pop(self: *Self) ?T {
-            if (self.isEmpty()) return null;
-            const result = self.items.pop();
-            if (!self.isEmpty()) {
-                self.top = self.items.getLast();
-            } else {
-                self.top = null;
-            }
-            return result;
-        }
-
-        pub fn isEmpty(self: *Self) bool {
-            return self.items.items.len == 0;
-        }
-
-        pub fn clear(self: *Self) void {
-            while (!self.isEmpty()) {
-                _ = self.pop();
-            }
-        }
-
-        pub fn size(self: *Self) usize {
-            return self.items.items.len;
-        }
-    };
-}
-
 const BackSlashState = enum {
     Idle,
     Pending,
@@ -57,22 +10,22 @@ const BackSlashState = enum {
 
 pub const Parser = struct {
     allocator: std.mem.Allocator,
-    stack: Stack(u8),
+    buffer: std.ArrayList(u8),
+    stack: std.ArrayList(u8),
 
     const Self = @This();
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
-            .stack = Stack(u8).init(allocator),
+            .stack = std.ArrayList(u8).init(allocator),
+            .buffer = std.ArrayList(u8).init(allocator),
         };
     }
 
     pub fn parse(self: *Self, input: []const u8) ![]const []const u8 {
-        self.stack.clear();
-
-        var buffer = std.ArrayList(u8).init(self.allocator);
-        defer buffer.deinit();
+        defer self.stack.clearAndFree();
+        defer self.buffer.clearAndFree();
 
         var args = std.ArrayList([]const u8).init(self.allocator);
         defer args.deinit();
@@ -83,8 +36,8 @@ pub const Parser = struct {
         for (input, 0..) |char, i| {
             var char_to_push: u8 = 0;
 
-            const stack_size = self.stack.size();
-            const stack_top = self.stack.top orelse 0;
+            const stack_size = self.stack.items.len;
+            const stack_top = self.stack.getLastOrNull() orelse 0;
 
             const char_is_double_quote = char == '"';
             const char_is_single_quote = char == '\'';
@@ -114,30 +67,30 @@ pub const Parser = struct {
 
             if (char_to_push != 0) {
                 if (stack_top == char_to_push) {
-                    _ = self.stack.pop();
+                    _ = self.stack.popOrNull();
                 } else {
                     if (stack_size == 0 and (char_is_quote)) {
-                        try self.stack.push(' ');
+                        try self.stack.append(' ');
                     }
 
-                    try self.stack.push(char_to_push);
+                    try self.stack.append(char_to_push);
                 }
 
-                if (self.stack.size() == 0) {
-                    try args.append(try buffer.toOwnedSlice());
+                if (self.stack.items.len == 0) {
+                    try args.append(try self.buffer.toOwnedSlice());
                 }
             }
 
-            if (self.stack.size() > 0 and char_to_push != char) {
+            if (self.stack.items.len > 0 and char_to_push != char) {
                 switch (back_slash_state) {
                     .Pending => {
                         back_slash_state = .Ready;
                     },
                     .Ready => {
                         if (stack_top == ' ') {
-                            _ = buffer.popOrNull();
+                            _ = self.buffer.popOrNull();
                         } else if (stack_top == '"' and (char == '\\' or char_is_double_quote or char_is_space)) {
-                            _ = buffer.popOrNull();
+                            _ = self.buffer.popOrNull();
                         }
 
                         back_slash_state = .Idle;
@@ -145,7 +98,7 @@ pub const Parser = struct {
                     else => {},
                 }
 
-                try buffer.append(char);
+                try self.buffer.append(char);
             }
 
             if (i != last_char_index) {
@@ -153,10 +106,10 @@ pub const Parser = struct {
                 continue;
             }
 
-            if (self.stack.isEmpty()) {
+            if (self.stack.items.len == 0) {
                 return args.toOwnedSlice();
-            } else if (self.stack.size() == 1 and self.stack.top == ' ') {
-                try args.append(try buffer.toOwnedSlice());
+            } else if (self.stack.items.len == 1 and self.stack.getLastOrNull() orelse 0 == ' ') {
+                try args.append(try self.buffer.toOwnedSlice());
             } else {
                 return error.ParseError;
             }
@@ -166,6 +119,7 @@ pub const Parser = struct {
 
     pub fn deinit(self: *Self) void {
         self.stack.deinit();
+        self.buffer.deinit();
     }
 };
 
