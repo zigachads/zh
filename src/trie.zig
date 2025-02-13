@@ -54,7 +54,7 @@ pub const Trie = struct {
         current.is_end = true;
     }
 
-    pub fn findWithPrefix(self: *Self, prefix: []const u8) !std.ArrayList([]const u8) {
+    pub fn findWithPrefix(self: *Self, prefix: []const u8) ![]const []const u8 {
         var results = std.ArrayList([]const u8).init(self.allocator);
         errdefer {
             for (results.items) |result| {
@@ -66,7 +66,7 @@ pub const Trie = struct {
 
         for (prefix) |c| {
             if (!current.children.contains(c)) {
-                return results;
+                return try results.toOwnedSlice();
             }
             current = current.children.get(c).?;
         }
@@ -78,7 +78,7 @@ pub const Trie = struct {
 
         try self.dfs(current, &word_buffer, &results);
 
-        return results;
+        return try results.toOwnedSlice();
     }
 
     fn dfs(

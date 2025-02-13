@@ -4,11 +4,11 @@ const trie = @import("../trie.zig");
 const testing = std.testing;
 const Trie = trie.Trie;
 
-fn verifyResults(results: std.ArrayList([]const u8), expected: []const []const u8) !void {
-    try testing.expectEqual(expected.len, results.items.len);
+fn verifyResults(results: []const []const u8, expected: []const []const u8) !void {
+    try testing.expectEqual(expected.len, results.len);
 
     var found = false;
-    for (results.items) |result| {
+    for (results) |result| {
         found = false;
         for (expected) |exp| {
             if (std.mem.eql(u8, result, exp)) {
@@ -34,14 +34,7 @@ test "Trie - basic prefix search" {
     try t.insert("cart");
     try t.insert("dog");
 
-    var results = try t.findWithPrefix("car");
-    defer {
-        for (results.items) |item| {
-            allocator.free(item);
-        }
-        results.deinit();
-    }
-
+    const results = try t.findWithPrefix("car");
     const expected = [_][]const u8{ "car", "card", "cart" };
     try verifyResults(results, &expected);
 }
@@ -60,14 +53,7 @@ test "Trie - empty prefix search" {
     try t.insert("cart");
     try t.insert("dog");
 
-    var results = try t.findWithPrefix("");
-    defer {
-        for (results.items) |item| {
-            allocator.free(item);
-        }
-        results.deinit();
-    }
-
+    const results = try t.findWithPrefix("");
     const expected = [_][]const u8{ "cat", "car", "card", "cart", "dog" };
     try verifyResults(results, &expected);
 }
@@ -83,9 +69,8 @@ test "Trie - non-existent prefix" {
     try t.insert("cat");
     try t.insert("dog");
 
-    var results = try t.findWithPrefix("xyz");
-    defer results.deinit();
-    try testing.expectEqual(@as(usize, 0), results.items.len);
+    const results = try t.findWithPrefix("xyz");
+    try testing.expectEqual(@as(usize, 0), results.len);
 }
 
 test "Trie - case sensitivity" {
@@ -100,14 +85,7 @@ test "Trie - case sensitivity" {
     try t.insert("Cat");
     try t.insert("cat");
 
-    var results = try t.findWithPrefix("C");
-    defer {
-        for (results.items) |item| {
-            allocator.free(item);
-        }
-        results.deinit();
-    }
-
+    const results = try t.findWithPrefix("C");
     const expected = [_][]const u8{ "CAT", "Cat" };
     try verifyResults(results, &expected);
 }
@@ -124,14 +102,7 @@ test "Trie - special characters" {
     try t.insert("hello?");
     try t.insert("hello...");
 
-    var results = try t.findWithPrefix("hello");
-    defer {
-        for (results.items) |item| {
-            allocator.free(item);
-        }
-        results.deinit();
-    }
-
+    const results = try t.findWithPrefix("hello");
     const expected = [_][]const u8{ "hello!", "hello?", "hello..." };
     try verifyResults(results, &expected);
 }
@@ -148,14 +119,7 @@ test "Trie - numbers in words" {
     try t.insert("test2");
     try t.insert("test123");
 
-    var results = try t.findWithPrefix("test");
-    defer {
-        for (results.items) |item| {
-            allocator.free(item);
-        }
-        results.deinit();
-    }
-
+    const results = try t.findWithPrefix("test");
     const expected = [_][]const u8{ "test1", "test2", "test123" };
     try verifyResults(results, &expected);
 }
@@ -172,14 +136,7 @@ test "Trie - single character words" {
     try t.insert("b");
     try t.insert("c");
 
-    var results = try t.findWithPrefix("a");
-    defer {
-        for (results.items) |item| {
-            allocator.free(item);
-        }
-        results.deinit();
-    }
-
+    const results = try t.findWithPrefix("a");
     const expected = [_][]const u8{"a"};
     try verifyResults(results, &expected);
 }
@@ -197,14 +154,7 @@ test "Trie - long words" {
     try t.insert(long_word1);
     try t.insert(long_word2);
 
-    var results = try t.findWithPrefix("super");
-    defer {
-        for (results.items) |item| {
-            allocator.free(item);
-        }
-        results.deinit();
-    }
-
+    const results = try t.findWithPrefix("super");
     const expected = [_][]const u8{ long_word1, long_word2 };
     try verifyResults(results, &expected);
 }
