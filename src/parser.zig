@@ -28,7 +28,7 @@ pub const Parser = struct {
         defer self.buffer.clearAndFree();
 
         var args = std.ArrayList([]const u8).init(self.allocator);
-        defer args.deinit();
+        errdefer args.deinit();
 
         var last_char: u8 = 0;
         var back_slash_state: BackSlashState = .Idle;
