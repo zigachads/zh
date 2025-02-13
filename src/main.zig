@@ -1,8 +1,10 @@
 const std = @import("std");
+
 const builtins = @import("builtins.zig");
 const utils = @import("utils.zig");
 const parser = @import("parser.zig");
 const writer = @import("writer.zig");
+const input = @import("input.zig");
 
 test {
     comptime {
@@ -16,9 +18,9 @@ pub fn main() !u8 {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Buffer
-    var buffer = std.ArrayList(u8).init(allocator);
-    defer buffer.deinit();
+    // Input
+    var input_reader = input.Input.init(allocator); // Initialize the input reader
+    defer input_reader.deinit();
 
     // Argv
     var _parser = parser.Parser.init(allocator);
@@ -41,13 +43,9 @@ pub fn main() !u8 {
         // Prompt
         try stdout.writer.print("$ ", .{});
 
-        // Clear previous input and arguments
-        buffer.clearRetainingCapacity();
-
-        // Read user input
-        const stdin = std.io.getStdIn().reader();
-        try stdin.streamUntilDelimiter(buffer.writer(), '\n', null);
-        const user_input = buffer.items;
+        // Read user input using the Input struct
+        const user_input = try input_reader.readLine(&stdout); // Use the readLine function
+        defer allocator.free(user_input);
 
         const raw_argv = _parser.parse(user_input) catch {
             try stderr.writer.print("zshell: parse error\n", .{});
