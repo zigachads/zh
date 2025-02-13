@@ -123,7 +123,7 @@ pub const Parser = struct {
     }
 };
 
-pub fn redirectHandler(
+pub fn redirectParser(
     raw_argv: []const []const u8,
     stdout: *writer.Writer,
     stderr: *writer.Writer,

@@ -60,7 +60,7 @@ pub fn main() !u8 {
 
         if (raw_argv.len == 0) continue;
 
-        const argv = parser.redirectHandler(
+        const argv = parser.redirectParser(
             raw_argv,
             &stdout,
             &stderr,
