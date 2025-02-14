@@ -1,8 +1,7 @@
 const std = @import("std");
-const parser = @import("../parser.zig");
-
 const testing = std.testing;
-const Parser = parser.Parser;
+
+const Parser = @import("../parser.zig");
 
 test "Parser - basic parsing" {
     var p = Parser.init(testing.allocator);

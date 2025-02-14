@@ -1,90 +1,90 @@
 const std = @import("std");
 
-const utils = @import("utils.zig");
-const writer = @import("writer.zig");
+const Exlut = @import("exlut.zig");
+const Writer = @import("writer.zig");
 
 pub const Builtins = enum { exit, echo, type, pwd, cd };
-pub const BuiltinAction = enum { panic_quit, peace_quit, none };
+pub const ShellAction = enum { Panic, Exit, NoAction };
 
 pub fn exitHandler(
     argv: []const []const u8,
-    stderr: *writer.Writer,
-) std.fs.File.WriteError!BuiltinAction {
+    stderr: *Writer,
+) std.fs.File.WriteError!ShellAction {
     if (argv.len != 2) {
-        try stderr.writer.print("exit: arguments number mismatch, {d} vs 2\n", .{argv.len});
-        return .none;
+        try stderr.print("exit: arguments number mismatch, {d} vs 2\n", .{argv.len});
+        return .NoAction;
     }
     const arg = std.fmt.parseInt(u8, argv[1], 10) catch {
-        try stderr.writer.print("exit: invalid argument: {s}\n", .{argv[1]});
-        return .none;
+        try stderr.print("exit: invalid argument: {s}\n", .{argv[1]});
+        return .NoAction;
     };
     if (arg == 0) {
-        return .peace_quit;
+        return .Exit;
     } else {
-        return .panic_quit;
+        return .Panic;
     }
 }
 
 pub fn echoHandler(
     argv: []const []const u8,
-    stdout: *writer.Writer,
-) !BuiltinAction {
+    stdout: *Writer,
+) !ShellAction {
     for (argv[1..argv.len], 0..) |word, index| {
         if (index != 0)
-            try stdout.writer.print(" ", .{});
-        try stdout.writer.print("{s}", .{word});
+            try stdout.print(" ", .{});
+        try stdout.print("{s}", .{word});
     }
-    try stdout.writer.print("\n", .{});
-    return .none;
+    try stdout.print("\n", .{});
+    return .NoAction;
 }
 
 pub fn typeHandler(
     argv: []const []const u8,
-    exec_lookup: *utils.ExecLookup,
-    stdout: *writer.Writer,
-    stderr: *writer.Writer,
-) !BuiltinAction {
+    exlut: *Exlut,
+    stdout: *Writer,
+    stderr: *Writer,
+) !ShellAction {
     if (argv.len != 2) {
-        try stderr.writer.print("type: arguments number mismatch, {d} vs 2\n", .{argv.len});
-        return .none;
+        try stderr.print("type: arguments number mismatch, {d} vs 2\n", .{argv.len});
+        return .NoAction;
     }
     const target = argv[1];
     _ = std.meta.stringToEnum(Builtins, target) orelse {
-        const target_path = exec_lookup.getExecutablePath(target) orelse {
-            try stderr.writer.print("{s}: not found\n", .{target});
-            return .none;
+        const target_path = exlut.getExecutablePath(target) orelse {
+            try stderr.print("{s}: not found\n", .{target});
+            return .NoAction;
         };
-        try stdout.writer.print("{s} is {s}\n", .{ target, target_path });
-        return .none;
+        try stdout.print("{s} is {s}\n", .{ target, target_path });
+        return .NoAction;
     };
-    try stdout.writer.print("{s} is a shell builtin\n", .{target});
-    return .none;
+    try stdout.print("{s} is a shell builtin\n", .{target});
+    return .NoAction;
 }
 
 pub fn pwdHandler(
     allocator: std.mem.Allocator,
     argv: []const []const u8,
-    stdout: *writer.Writer,
-    stderr: *writer.Writer,
-) !BuiltinAction {
+    stdout: *Writer,
+    stderr: *Writer,
+) !ShellAction {
     if (argv.len != 1) {
-        try stderr.writer.print("pwd: too many arguments\n", .{});
-        return .none;
+        try stderr.print("pwd: too many arguments\n", .{});
+        return .NoAction;
     }
     const pwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(pwd);
-    try stdout.writer.print("{s}\n", .{pwd});
-    return .none;
+    try stdout.print("{s}\n", .{pwd});
+    return .NoAction;
 }
 
 pub fn cdHandler(
     allocator: std.mem.Allocator,
     argv: []const []const u8,
-    stderr: *writer.Writer,
-) !BuiltinAction {
+    stderr: *Writer,
+) !ShellAction {
     if (argv.len != 2) {
-        try stderr.writer.print("cd: arguments number mismatch, {d} vs 2\n", .{argv.len});
-        return .none;
+        try stderr.print("cd: arguments number mismatch, {d} vs 2\n", .{argv.len});
+        return .NoAction;
     }
 
     var dir: ?std.fs.Dir = null;
@@ -97,52 +97,52 @@ pub fn cdHandler(
     const target = argv[1];
     if (target[0] != '~') {
         dir = std.fs.cwd().openDir(target, .{}) catch {
-            try stderr.writer.print("cd: {s}: No such file or directory\n", .{target});
-            return .none;
+            try stderr.print("cd: {s}: No such file or directory\n", .{target});
+            return .NoAction;
         };
     } else {
         var env_map = std.process.getEnvMap(allocator) catch {
-            return .none;
+            return .NoAction;
         };
         defer env_map.deinit();
 
         const home = env_map.get("HOME") orelse {
-            try stderr.writer.print("cd: HOME variable not available\n", .{});
-            return .none;
+            try stderr.print("cd: HOME variable not available\n", .{});
+            return .NoAction;
         };
 
         if (target.len > 1) {
             const path = std.fs.path.join(allocator, &[_][]const u8{ home, target[1..] }) catch {
-                try stderr.writer.print("cd: {s}: No such file or directory\n", .{target});
-                return .none;
+                try stderr.print("cd: {s}: No such file or directory\n", .{target});
+                return .NoAction;
             };
             defer allocator.free(path);
             dir = std.fs.cwd().openDir(path, .{}) catch {
-                try stderr.writer.print("cd: {s}: No such file or directory\n", .{target});
-                return .none;
+                try stderr.print("cd: {s}: No such file or directory\n", .{target});
+                return .NoAction;
             };
         } else {
             dir = std.fs.cwd().openDir(home, .{}) catch {
-                try stderr.writer.print("cd: {s}: No such file or directory\n", .{target});
-                return .none;
+                try stderr.print("cd: {s}: No such file or directory\n", .{target});
+                return .NoAction;
             };
         }
     }
 
     if (dir) |*d| {
         d.*.setAsCwd() catch |err| {
-            try stderr.writer.print("cd: {any}\n", .{err});
+            try stderr.print("cd: {any}\n", .{err});
         };
     }
 
-    return .none;
+    return .NoAction;
 }
 
 pub fn execHandler(
     allocator: std.mem.Allocator,
     argv: []const []const u8,
-    stdout: *writer.Writer,
-    stderr: *writer.Writer,
+    stdout: *Writer,
+    stderr: *Writer,
 ) !std.process.Child.Term {
     const stdout_is_default = stdout.is_default();
     const stderr_is_default = stderr.is_default();
@@ -175,8 +175,8 @@ pub fn execHandler(
 
     const term = try child.wait();
 
-    if (!stdout_is_default) try stdout.writer.print("{s}", .{stdout_bytes});
-    if (!stderr_is_default) try stderr.writer.print("{s}", .{stderr_bytes});
+    if (!stdout_is_default) try stdout.print("{s}", .{stdout_bytes});
+    if (!stderr_is_default) try stderr.print("{s}", .{stderr_bytes});
 
     return term;
 }

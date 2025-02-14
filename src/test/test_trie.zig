@@ -1,8 +1,7 @@
 const std = @import("std");
-const trie = @import("../trie.zig");
-
 const testing = std.testing;
-const Trie = trie.Trie;
+
+const Trie = @import("../trie.zig");
 
 fn verifyResults(results: []const []const u8, expected: []const []const u8) !void {
     try testing.expectEqual(expected.len, results.len);

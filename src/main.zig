@@ -1,10 +1,12 @@
 const std = @import("std");
 
-const builtins = @import("builtins.zig");
-const utils = @import("utils.zig");
-const parser = @import("parser.zig");
-const writer = @import("writer.zig");
-const input = @import("input.zig");
+const handlers = @import("handlers.zig");
+const Builtins = handlers.Builtins;
+const Exlut = @import("exlut.zig");
+const Parser = @import("parser.zig");
+const Writer = @import("writer.zig");
+const Input = @import("input.zig");
+const Trie = @import("trie.zig");
 
 test {
     comptime {
@@ -19,21 +21,26 @@ pub fn main() !u8 {
     const allocator = gpa.allocator();
 
     // Input
-    var input_reader = input.Input.init(allocator); // Initialize the input reader
-    defer input_reader.deinit();
+    var input = Input.init(allocator); // Initialize the input reader
+    defer input.deinit();
 
-    // Argv
-    var _parser = parser.Parser.init(allocator);
-    defer _parser.deinit();
+    // Input parser
+    var parser = Parser.init(allocator);
+    defer parser.deinit();
 
-    // ExecLookup
-    var exec_lookup = utils.ExecLookup.init(allocator);
-    defer exec_lookup.deinit();
-    try exec_lookup.populate();
+    // Exec Lookup Table
+    var exlut = Exlut.init(allocator);
+    defer exlut.deinit();
+    try exlut.populate();
+
+    // Trie (completion)
+    var trie = try Trie.init(allocator);
+    defer trie.deinit();
+    try trie.populate(&exlut);
 
     // Writer
-    var stdout = writer.Writer.init(&std.io.getStdOut);
-    var stderr = writer.Writer.init(&std.io.getStdOut);
+    var stdout = Writer.init(&std.io.getStdOut);
+    var stderr = Writer.init(&std.io.getStdOut);
 
     while (true) {
         // Writer reset
@@ -44,10 +51,10 @@ pub fn main() !u8 {
         try stdout.writer.print("$ ", .{});
 
         // Read user input using the Input struct
-        const user_input = try input_reader.readLine(&stdout); // Use the readLine function
+        const user_input = try input.readLine(&stdout); // Use the readLine function
         defer allocator.free(user_input);
 
-        const raw_argv = _parser.parse(user_input) catch {
+        const raw_argv = parser.parse(user_input) catch {
             try stderr.writer.print("zshell: parse error\n", .{});
             continue;
         };
@@ -60,15 +67,15 @@ pub fn main() !u8 {
 
         if (raw_argv.len == 0) continue;
 
-        const argv = parser.redirectParser(
+        const argv = Parser.redirectParse(
             raw_argv,
             &stdout,
             &stderr,
         ) catch raw_argv;
 
-        const command = std.meta.stringToEnum(builtins.Builtins, argv[0]) orelse {
-            if (exec_lookup.hasExecutable(argv[0])) {
-                _ = builtins.execHandler(allocator, argv, &stdout, &stderr) catch {};
+        const command = std.meta.stringToEnum(Builtins, argv[0]) orelse {
+            if (exlut.hasExecutable(argv[0])) {
+                _ = handlers.execHandler(allocator, argv, &stdout, &stderr) catch {};
             } else {
                 try stderr.writer.print("{s}: command not found\n", .{argv[0]});
             }
@@ -77,27 +84,27 @@ pub fn main() !u8 {
 
         switch (command) {
             .exit => {
-                switch (try builtins.exitHandler(argv, &stderr)) {
-                    .none => {},
-                    .peace_quit => {
+                switch (try handlers.exitHandler(argv, &stderr)) {
+                    .NoAction => {},
+                    .Exit => {
                         return 0;
                     },
-                    .panic_quit => {
+                    .Panic => {
                         return 1;
                     },
                 }
             },
             .echo => {
-                _ = try builtins.echoHandler(argv, &stdout);
+                _ = try handlers.echoHandler(argv, &stdout);
             },
             .type => {
-                _ = try builtins.typeHandler(argv, &exec_lookup, &stdout, &stderr);
+                _ = try handlers.typeHandler(argv, &exlut, &stdout, &stderr);
             },
             .pwd => {
-                _ = try builtins.pwdHandler(allocator, argv, &stdout, &stderr);
+                _ = try handlers.pwdHandler(allocator, argv, &stdout, &stderr);
             },
             .cd => {
-                _ = try builtins.cdHandler(allocator, argv, &stderr);
+                _ = try handlers.cdHandler(allocator, argv, &stderr);
             },
         }
     }
