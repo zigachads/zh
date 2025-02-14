@@ -1,5 +1,8 @@
 const std = @import("std");
 
+const builtins = @import("builtins.zig");
+const utils = @import("utils.zig");
+
 pub const Trie = struct {
     const Node = struct {
         children: std.AutoHashMap(u8, *Node),
@@ -99,6 +102,16 @@ pub const Trie = struct {
             try word_buffer.append(c);
             try self.dfs(entry.value_ptr.*, word_buffer, results);
             _ = word_buffer.pop();
+        }
+    }
+
+    pub fn populate(self: *Self, exec_lookup: *utils.ExecLookup) void {
+        for (@typeInfo(builtins.Builtins).Enum.fields) |field| {
+            self.insert(field.name);
+        }
+        var exec_it = exec_lookup.map.keyIterator();
+        while (exec_it.next()) |exec_name| {
+            self.insert(exec_name.*);
         }
     }
 };
