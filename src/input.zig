@@ -2,18 +2,21 @@ const std = @import("std");
 
 const termios = @import("termios.zig");
 const Writer = @import("writer.zig");
+const Trie = @import("trie.zig");
 
 allocator: std.mem.Allocator,
 buffer: std.ArrayList(u8),
 cursor_pos: usize,
+trie: *Trie,
 
 const Self = @This();
 
-pub fn init(allocator: std.mem.Allocator) Self {
+pub fn init(allocator: std.mem.Allocator, trie: *Trie) Self {
     return Self{
         .buffer = std.ArrayList(u8).init(allocator),
         .cursor_pos = 0,
         .allocator = allocator,
+        .trie = trie,
     };
 }
 
@@ -94,6 +97,43 @@ pub fn readChar(self: *Self, stdout: *Writer) !bool {
             // Enter
             try stdout.print("\n", .{});
             return true;
+        },
+        '\t' => {
+            // tab completion
+            var to_complete: ?[]const u8 = null;
+
+            const buffer_last_index = self.buffer.items.len - 1;
+            for (self.buffer.items, 0..) |item, i| {
+                if (item == ' ' and i != 0) {
+                    to_complete = self.buffer.items[0..i];
+                } else if (i == buffer_last_index) {
+                    to_complete = self.buffer.items[0 .. i + 1];
+                }
+            }
+
+            if (to_complete == null) return false;
+
+            const completions = try self.trie.findWithPrefix(to_complete.?);
+            defer {
+                for (completions) |c| self.allocator.free(c);
+                self.allocator.free(completions);
+            }
+            if (completions.len == 0) {
+                try stdout.print("{c}", .{7}); // bell
+                return false;
+            } else if (completions[0].len == to_complete.?.len) {
+                return false;
+            }
+
+            if (self.cursor_pos == self.buffer.items.len and self.cursor_pos == to_complete.?.len) {
+                const slice = completions[0][to_complete.?.len..];
+                try stdout.print("{s} ", .{slice});
+                try self.buffer.appendSlice(slice);
+                try self.buffer.append(' ');
+                self.cursor_pos += (slice.len + 1);
+            }
+
+            return false;
         },
         else => {
             // Normal character

@@ -20,10 +20,6 @@ pub fn main() !u8 {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Input
-    var input = Input.init(allocator); // Initialize the input reader
-    defer input.deinit();
-
     // Input parser
     var parser = Parser.init(allocator);
     defer parser.deinit();
@@ -38,7 +34,11 @@ pub fn main() !u8 {
     defer trie.deinit();
     try trie.populate(&exlut);
 
-    // Writer
+    // Stdin
+    var input = Input.init(allocator, &trie); // Initialize the input reader
+    defer input.deinit();
+
+    // Stdout
     var stdout = Writer.init(&std.io.getStdOut);
     var stderr = Writer.init(&std.io.getStdOut);
 
