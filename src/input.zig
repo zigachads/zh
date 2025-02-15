@@ -49,6 +49,32 @@ fn free_completions_cache(self: *Self) void {
     self.completions_cache = null;
 }
 
+fn try_partial_completion(self: *Self, to_complete: []const u8) ?[]const u8 {
+    assert(self.completions_cache != null);
+    assert(self.completions_cache.?.len > 1);
+
+    const completions = self.completions_cache.?;
+    var last_valid_index = to_complete.len;
+    for (to_complete.len..100) |i| Outer: {
+        var target: ?u8 = null;
+        for (completions) |c| {
+            if (i > c.len - 1) {
+                break :Outer;
+            } else if (target == null) {
+                target = c[i];
+            } else if (target.? != c[i]) {
+                break :Outer;
+            }
+        }
+        last_valid_index += 1;
+    }
+    if (last_valid_index == to_complete.len) {
+        return null;
+    } else {
+        return completions[0][to_complete.len..last_valid_index];
+    }
+}
+
 fn idleHandler(self: *Self, char: u8, stdout: *Writer) !void {
     assert(self.state == .Idle);
 
@@ -160,32 +186,50 @@ fn tabHandler(self: *Self, stdout: *Writer) !void {
     if (to_complete == null) return;
 
     assert(self.completions_cache == null);
+
     self.completions_cache = try self.trie.findWithPrefix(to_complete.?);
     errdefer {
         self.free_completions_cache();
     }
+
     const completions = self.completions_cache.?;
+    var completion: []const u8 = undefined;
+    var is_partial_completion = false;
     if (completions.len == 0) {
         self.free_completions_cache();
         try stdout.print("{c}", .{7}); // bell
         return;
-    } else if (completions.len == 1 and completions[0].len == to_complete.?.len) {
-        self.free_completions_cache();
-        try stdout.print("{c}", .{7}); // bell
-        return;
+    } else if (completions.len == 1) {
+        if (completions[0].len == to_complete.?.len) {
+            self.free_completions_cache();
+            try stdout.print("{c}", .{7}); // bell
+            return;
+        } else {
+            completion = completions[0][to_complete.?.len..];
+        }
     } else if (completions.len > 1) {
-        try stdout.print("{c}", .{7}); // bell
-        self.state = .Tab0;
-        return;
+        if (self.try_partial_completion(to_complete.?)) |c| {
+            is_partial_completion = true;
+            completion = c;
+        } else {
+            try stdout.print("{c}", .{7}); // bell
+            self.state = .Tab0;
+            return;
+        }
     }
 
-    const completion = completions[0][to_complete.?.len..];
     const to_complete_len = to_complete.?.len;
     if (self.cursor_pos == to_complete_len) {
-        try stdout.print("{s} ", .{completion});
-        try self.buffer.appendSlice(completion);
-        try self.buffer.append(' ');
-        self.cursor_pos += (completion.len + 1);
+        if (!is_partial_completion) {
+            try stdout.print("{s} ", .{completion});
+            try self.buffer.appendSlice(completion);
+            try self.buffer.append(' ');
+            self.cursor_pos += (completion.len + 1);
+        } else {
+            try stdout.print("{s}", .{completion});
+            try self.buffer.appendSlice(completion);
+            self.cursor_pos += completion.len;
+        }
     } else {
         for (completion, to_complete_len..) |c, i| try self.buffer.insert(
             i,
