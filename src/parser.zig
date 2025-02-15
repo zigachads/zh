@@ -3,19 +3,13 @@ const assert = std.debug.assert;
 
 const Writer = @import("writer.zig");
 
-const BackSlashState = enum {
-    Idle,
-    Pending,
-    Ready,
-};
-
 const ParserState = enum {
     Idle,
     Default,
     BS, // Backslash
     SQ, // Single Quote
     DQ, // Double Quote
-    DQBS, // Double Quote Backslash Pending
+    DQBS, // Double Quote Backslash
 };
 
 allocator: std.mem.Allocator,
