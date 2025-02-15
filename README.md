@@ -1,4 +1,4 @@
-# zshell
+# zh
 
 A toy POSIX shell written in Zig.
 
@@ -18,9 +18,9 @@ README.md       src
 $ cd ..
 $ pwd
 /Users/spedon/eden/zig
-$ cd zshell
+$ cd zh
 $ pwd
-/Users/spedon/eden/zig/zshell
+/Users/spedon/eden/zig/zh
 $ ls > test.txt
 $ cat test.txt
 LICENSE

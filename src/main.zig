@@ -55,7 +55,7 @@ pub fn main() !u8 {
         defer allocator.free(user_input);
 
         const raw_argv = parser.parse(user_input) catch {
-            try stderr.writer.print("zshell: parse error\n", .{});
+            try stderr.writer.print("zh: parse error\n", .{});
             continue;
         };
         defer {
