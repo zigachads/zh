@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
 const Writer = @import("writer.zig");
 
@@ -8,117 +9,179 @@ const BackSlashState = enum {
     Ready,
 };
 
+const ParserState = enum {
+    Idle,
+    Default,
+    BS, // Backslash
+    SQ, // Single Quote
+    DQ, // Double Quote
+    DQBS, // Double Quote Backslash Pending
+};
+
 allocator: std.mem.Allocator,
 buffer: std.ArrayList(u8),
-stack: std.ArrayList(u8),
+args: std.ArrayList([]const u8),
+state: ParserState = .Default,
 
 const Self = @This();
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{
         .allocator = allocator,
-        .stack = std.ArrayList(u8).init(allocator),
         .buffer = std.ArrayList(u8).init(allocator),
+        .args = std.ArrayList([]const u8).init(allocator),
     };
 }
 
-pub fn parse(self: *Self, input: []const u8) ![]const []const u8 {
-    defer self.stack.clearAndFree();
-    defer self.buffer.clearAndFree();
-
-    var args = std.ArrayList([]const u8).init(self.allocator);
-    errdefer args.deinit();
-
-    var last_char: u8 = 0;
-    var back_slash_state: BackSlashState = .Idle;
-    const last_char_index = if (input.len == 0) 0 else input.len - 1;
-    for (input, 0..) |char, i| {
-        var char_to_push: u8 = 0;
-
-        const stack_size = self.stack.items.len;
-        const stack_top = self.stack.getLastOrNull() orelse 0;
-
-        const char_is_double_quote = char == '"';
-        const char_is_single_quote = char == '\'';
-        const char_is_quote = char_is_single_quote or char_is_double_quote;
-        const char_is_space = char == ' ';
-
-        switch (back_slash_state) {
-            .Ready, .Pending => {},
-            .Idle => {
-                if (char == '\\' and (stack_top == '"' or stack_top == ' ' or stack_size == 0)) {
-                    back_slash_state = .Pending;
-                }
-
-                if (!char_is_space and stack_size == 0) {
-                    if (char_is_quote) {
-                        char_to_push = char;
-                    } else {
-                        char_to_push = ' ';
-                    }
-                } else if (stack_size > 0 and char_is_quote and (stack_top == char or stack_top == ' ')) {
-                    char_to_push = char;
-                } else if (stack_top == ' ' and stack_size == 1 and char_is_space) {
-                    char_to_push = ' ';
-                }
-            },
-        }
-
-        if (char_to_push != 0) {
-            if (stack_top == char_to_push) {
-                _ = self.stack.popOrNull();
-            } else {
-                if (stack_size == 0 and (char_is_quote)) {
-                    try self.stack.append(' ');
-                }
-
-                try self.stack.append(char_to_push);
-            }
-
-            if (self.stack.items.len == 0) {
-                try args.append(try self.buffer.toOwnedSlice());
-            }
-        }
-
-        if (self.stack.items.len > 0 and char_to_push != char) {
-            switch (back_slash_state) {
-                .Pending => {
-                    back_slash_state = .Ready;
-                },
-                .Ready => {
-                    if (stack_top == ' ') {
-                        _ = self.buffer.popOrNull();
-                    } else if (stack_top == '"' and (char == '\\' or char_is_double_quote or char_is_space)) {
-                        _ = self.buffer.popOrNull();
-                    }
-
-                    back_slash_state = .Idle;
-                },
-                else => {},
-            }
-
-            try self.buffer.append(char);
-        }
-
-        if (i != last_char_index) {
-            last_char = char;
-            continue;
-        }
-
-        if (self.stack.items.len == 0) {
-            return args.toOwnedSlice();
-        } else if (self.stack.items.len == 1 and self.stack.getLastOrNull() orelse 0 == ' ') {
-            try args.append(try self.buffer.toOwnedSlice());
-        } else {
-            return error.ParseError;
-        }
-    }
-    return args.toOwnedSlice();
+pub fn deinit(self: *Self) void {
+    self.free_buffer();
+    self.buffer.deinit();
+    self.args.deinit();
 }
 
-pub fn deinit(self: *Self) void {
-    self.stack.deinit();
-    self.buffer.deinit();
+fn free_buffer(self: *Self) void {
+    for (self.args.items) |arg| {
+        self.allocator.free(arg);
+    }
+    self.buffer.clearAndFree();
+}
+
+fn idleHandler(self: *Self, char: u8) !void {
+    assert(self.state == .Idle);
+
+    switch (char) {
+        ' ' => {},
+        '\'' => {
+            self.state = .SQ;
+        },
+        '"' => {
+            self.state = .DQ;
+        },
+        '\\' => {
+            self.state = .BS;
+        },
+        else => {
+            try self.buffer.append(char);
+            self.state = .Default;
+        },
+    }
+}
+
+fn defaultHandler(self: *Self, char: u8) !void {
+    assert(self.state == .Default);
+
+    switch (char) {
+        ' ' => {
+            if (self.buffer.items.len > 0) {
+                try self.args.append(try self.buffer.toOwnedSlice());
+            }
+            self.state = .Idle;
+        },
+        '\\' => {
+            self.state = .BS;
+        },
+        '\'' => {
+            self.state = .SQ;
+        },
+        '"' => {
+            self.state = .DQ;
+        },
+        else => {
+            try self.buffer.append(char);
+        },
+    }
+}
+
+fn bsHandler(self: *Self, char: u8) !void {
+    assert(self.state == .BS);
+
+    try self.buffer.append(char);
+    self.state = .Default;
+}
+
+fn sqHandler(self: *Self, char: u8) !void {
+    assert(self.state == .SQ);
+
+    if (char == '\'') {
+        self.state = .Default;
+    } else {
+        try self.buffer.append(char);
+    }
+}
+
+fn dqHandler(self: *Self, char: u8) !void {
+    assert(self.state == .DQ);
+
+    switch (char) {
+        '"' => {
+            self.state = .Default;
+        },
+        '\\' => {
+            self.state = .DQBS;
+        },
+        else => {
+            try self.buffer.append(char);
+        },
+    }
+}
+
+fn dqbsHandler(self: *Self, char: u8) !void {
+    assert(self.state == .DQBS);
+
+    switch (char) {
+        '"', '\\', ' ' => {
+            try self.buffer.append(char);
+        },
+        else => {
+            try self.buffer.appendSlice(&[_]u8{ '\\', char });
+        },
+    }
+
+    self.state = .DQ;
+}
+
+pub fn parse(self: *Self, input: []const u8) ![]const []const u8 {
+    defer self.buffer.clearAndFree();
+    errdefer self.free_buffer();
+
+    for (input) |char| {
+        switch (self.state) {
+            .Idle => {
+                try self.idleHandler(char);
+            },
+            .Default => {
+                try self.defaultHandler(char);
+            },
+            .BS => {
+                try self.bsHandler(char);
+            },
+            .SQ => {
+                try self.sqHandler(char);
+            },
+            .DQ => {
+                try self.dqHandler(char);
+            },
+            .DQBS => {
+                try self.dqbsHandler(char);
+            },
+        }
+    }
+
+    switch (self.state) {
+        .Idle => {
+            return try self.args.toOwnedSlice();
+        },
+        .Default => {
+            if (self.buffer.items.len > 0) {
+                try self.args.append(try self.buffer.toOwnedSlice());
+            }
+            return try self.args.toOwnedSlice();
+        },
+        else => {
+            self.free_buffer();
+            return error.ParseError;
+        },
+    }
 }
 
 pub fn redirectParse(
