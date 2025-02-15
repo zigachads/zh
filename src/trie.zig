@@ -95,11 +95,19 @@ fn dfs(
         try results.append(word);
     }
 
-    var it = node.children.iterator();
-    while (it.next()) |entry| {
-        const c = entry.key_ptr.*;
+    var keys = std.ArrayList(u8).init(self.allocator);
+    defer keys.deinit();
+    var it = node.children.keyIterator();
+    while (it.next()) |key| {
+        try keys.append(key.*);
+    }
+
+    std.mem.sort(u8, keys.items, {}, std.sort.asc(u8));
+
+    for (keys.items) |c| {
+        const child_node = node.children.get(c).?;
         try word_buffer.append(c);
-        try self.dfs(entry.value_ptr.*, word_buffer, results);
+        try self.dfs(child_node, word_buffer, results);
         _ = word_buffer.pop();
     }
 }
