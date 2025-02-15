@@ -100,14 +100,22 @@ pub fn readChar(self: *Self, stdout: *Writer) !bool {
         },
         '\t' => {
             // tab completion
+            if (self.cursor_pos != self.buffer.items.len) {
+                std.debug.print("mismatch\n", .{});
+                // only complete when cursor is at the end
+                return false;
+            }
+
             var to_complete: ?[]const u8 = null;
 
             const buffer_last_index = self.buffer.items.len - 1;
             for (self.buffer.items, 0..) |item, i| {
                 if (item == ' ' and i != 0) {
                     to_complete = self.buffer.items[0..i];
+                    break;
                 } else if (i == buffer_last_index) {
                     to_complete = self.buffer.items[0 .. i + 1];
+                    break;
                 }
             }
 
@@ -125,12 +133,27 @@ pub fn readChar(self: *Self, stdout: *Writer) !bool {
                 return false;
             }
 
-            if (self.cursor_pos == self.buffer.items.len and self.cursor_pos == to_complete.?.len) {
+            // completion
+            if (self.cursor_pos == to_complete.?.len) {
                 const slice = completions[0][to_complete.?.len..];
                 try stdout.print("{s} ", .{slice});
                 try self.buffer.appendSlice(slice);
                 try self.buffer.append(' ');
                 self.cursor_pos += (slice.len + 1);
+            } else {
+                const slice = completions[0][to_complete.?.len..];
+                for (slice, to_complete.?.len..) |c, i| {
+                    try self.buffer.insert(i, c);
+                }
+
+                for (0..self.cursor_pos - to_complete.?.len) |_| {
+                    try stdout.print("\x1b[D", .{});
+                }
+
+                const tail = self.buffer.items[to_complete.?.len..];
+                try stdout.print("\x1b[K{s}", .{tail});
+
+                self.cursor_pos += slice.len;
             }
 
             return false;
