@@ -140,7 +140,7 @@ fn bkspHandler(self: *Self, stdout: *Writer) !void {
 
     if (self.cursor_pos == self.buffer.items.len) {
         // Remove character from buffer
-        _ = self.buffer.popOrNull();
+        _ = self.buffer.pop();
         self.cursor_pos -= 1;
 
         // ANSI backspace

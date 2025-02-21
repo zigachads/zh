@@ -6,21 +6,13 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const exe = b.addExecutable(.{
-        .name = "main",
+        .name = "zh",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     b.installArtifact(exe);
-
-    // For zls build_on_save
-    const exe_check = b.addExecutable(.{
-        .name = "main",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
 
     // Run
     const run_cmd = b.addRunArtifact(exe);
@@ -42,8 +34,4 @@ pub fn build(b: *std.Build) void {
     test_cmd.step.dependOn(b.getInstallStep());
     const test_step = b.step("test", "Run the tests");
     test_step.dependOn(&test_cmd.step);
-
-    // For zls build_on_save
-    const check = b.step("check", "Check if foo compiles");
-    check.dependOn(&exe_check.step);
 }
